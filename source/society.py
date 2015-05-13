@@ -91,7 +91,7 @@ class Society:
     def run(self):
         self.time = 0
         print('time|pop|pol|cri|sit|of_c|of_n|of_p|br_ac|inter')
-        for i in range(1000):
+        for i in range(40):
             self.__iteration()
 
     def __initiate_counters(self):
