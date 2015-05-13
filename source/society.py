@@ -72,7 +72,8 @@ class Society:
                  reproduction_step,
                  criminal_fine,
                  police_reward,
-                 bribe_fine
+                 bribe_fine,
+                 growth_rate
                  ):
         self.pop_size = pop_size
         self.criminal_fraction = criminal_fraction
@@ -81,6 +82,7 @@ class Society:
         self.criminal_fine = criminal_fine
         self.police_reward = police_reward
         self.bribe_fine = bribe_fine
+        self.growth_rate = growth_rate
         # datastructures
         self.population = self.__generate_population()
         self.__initiate_counters()
@@ -94,9 +96,7 @@ class Society:
 
     def __initiate_counters(self):
         self.bribe_situations = 0
-        self.bribe_offers_c = 0
-        self.bribe_offers_n = 0
-        self.bribe_offers_p = 0
+        self.bribe_offers = 0
         self.bribe_accepted = 0
         self.interactions = 0
 
@@ -106,23 +106,26 @@ class Society:
         pol = sum((1 for i in self.population if i.police))
         crim = sum((1 for i in self.population if i.criminal))
         sit = self.bribe_situations
-        of_c = self.bribe_offers_c
-        of_n = self.bribe_offers_n
-        of_p = self.bribe_offers_p
+        of_p = self.bribe_offers
         br_ac = self.bribe_accepted
         inter = self.interactions
-        print('%d|' * 10 % (time, pop, pol, crim, sit, of_c, of_n, of_p, br_ac, inter))
+        print('%d|' * 8 % (time, pop, pol, crim, sit, of_p, br_ac, inter))
 
-    def __determine_briber(self, org1, org2):
-        if not org1.police:  # org1 not police
-            briber, police = org1, org2
-        elif not org2.police:  # org2 not police
-            briber, police = org2, org1
-        elif org1.police and org2.police:
-            pair = [org1, org2]
-            random.shuffle(pair)
-            briber, police = pair
-        return briber, police
+    def __determine_give_take(self, org1, org2):
+        "Who has to give to who"
+        pair = [org1, org2]
+        random.shuffle(pair)
+        if org1.police:
+            if org2.police:
+                giver, taker = pair
+            else:
+                giver, taker = org2, org1
+        else:
+            if org2.police:
+                giver, taker = org1, org2
+            else:
+                giver, taker = pair
+        return giver, taker
 
     def __calculate_transaction(self, bribe_given, bribe_accepted, briber_criminal):
         briber_update, police_update = 0, 0
@@ -134,7 +137,6 @@ class Society:
             briber_update, police_update = self.bribe_fine, self.bribe_fine
             # bribe honest officer
             briber_update, police_update = self.bribe_fine, self.police_reward
-            pass
         return briber_update, police_update
 
     def __iteration(self):
@@ -142,27 +144,24 @@ class Society:
         # Round robin tournament
         for org1, org2 in combinations(self.population, 2):
             self.interactions += 1
+            giver, taker = self.__determine_give_take(org1, org2)
             if org1.police or org2.police:
                 self.bribe_situations += 1
-                # determine who must bribe whom
-                briber, police = self.__determine_briber(org1, org2)
+                briber, police = giver, taker
                 bribe_given, bribe_accepted = False, False
-                # ask bribe if he wants to bribe
                 if briber.give_bribe():
                     bribe_given = True
-                    if briber.criminal:
-                        self.bribe_offers_c += 1
-                    elif not briber.criminal:
-                        self.bribe_offers_n += 1
-                    if briber.police:
-                        self.bribe_offers_p += 1
-                    # ask if police accepts
+                    self.bribe_offers += 1
                     if police.take_bribe():
                         bribe_accepted = True
                         self.bribe_accepted += 1
                 briber_update, police_update = self.__calculate_transaction(bribe_given, bribe_accepted, briber.criminal)
                 briber.update_money(briber_update)
                 police.update_money(police_update)
+            else:
+                transaction_amount = random.random() * giver.money * 0.3
+                giver.update_money(-transaction_amount)
+                taker.update_money(transaction_amount)
         self.__record_state_of_population()
         if self.time % self.reproduction_step == 0:
             self.__reproduce_population()
@@ -173,15 +172,20 @@ class Society:
         for org in self.population:
             children = org.get_children()
             new_pop.extend(children)
-        self.pop_size = len(new_pop)
-        criminals = sum((1 for i in new_pop if i.criminal))
-        police = sum((1 for i in new_pop if i.police))
-        self.criminal_fraction = float(criminals) / self.pop_size
-        self.police_fraction = float(police) / self.pop_size
-        # simulate the random deaths by truncating 30 %
+        # simulate the random deaths
         random.shuffle(new_pop)
-        mark = int(0.7 * self.pop_size)
+        mark = int(self.growth_rate * self.pop_size)
         self.population = new_pop[:mark]
+        # generate data
+        self.pop_size = len(self.population)
+        criminals = sum((1 for i in self.population if i.criminal))
+        police = sum((1 for i in self.population if i.police))
+        try:
+            self.criminal_fraction = float(criminals) / self.pop_size
+            self.police_fraction = float(police) / self.pop_size
+        except ZeroDivisionError:
+            import sys
+            sys.exit()
 
     def __generate_population(self):
         size = self.pop_size
@@ -202,5 +206,5 @@ class Society:
         return population
 
 if __name__ == '__main__':
-    soc = Society(100, 0.1, 0.1, 1, 5, 4, 6)
+    soc = Society(100, 0.1, 0.1, 1, 5, 4, 6, 1.1)
     soc.run()
